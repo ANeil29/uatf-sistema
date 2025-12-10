@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python313", "cairo", "pango", "gdk-pixbuf"]
-
-[phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
-
-[start]
-cmd = "gunicorn uatf_sistema.wsgi --log-file -"
