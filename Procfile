@@ -1,0 +1,1 @@
+web: gunicorn uatf_sistema.wsgi --log-file -

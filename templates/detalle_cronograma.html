@@ -1,0 +1,503 @@
+<!-- templates/detalle_cronograma.html -->
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="header-section">
+    <a href="{% url 'lista_carreras' %}" class="btn-volver">
+        ← Volver a la lista
+    </a>
+    
+    <!-- Botones de Reporte -->
+    <div class="botones-reporte">
+        <a href="{% url 'reporte_pdf' carrera.id %}" class="btn-reporte btn-pdf">
+            📊 Descargar PDF
+        </a>
+        <a href="{% url 'reporte_excel' carrera.id %}" class="btn-reporte btn-excel">
+            📈 Descargar Excel
+        </a>
+    </div>
+    
+    <div class="ultima-actualizacion">
+        Última actualización: {% now "d/m/Y H:i" %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>{{ carrera.nombre }}</h2>
+    <p><strong>Facultad:</strong> {{ carrera.facultad.nombre }}</p>
+    <p><strong>Sede:</strong> {{ carrera.sede.nombre }}</p>
+    <p><strong>Grado Académico:</strong> {{ carrera.get_grado_academico_display }}</p>
+</div>
+
+<!-- Barra de Progreso -->
+<div class="card">
+    <h3>Progreso General del Rediseño Curricular</h3>
+    <div class="progress-bar-container">
+        <div class="progress-bar-fill" data-progress="{{ progreso_porcentaje }}">
+            <span class="progress-text">{{ progreso_porcentaje }}%</span>
+        </div>
+    </div>
+    <div class="progress-info">
+        {{ fases_completadas }} de {{ total_fases }} fases completadas
+    </div>
+</div>
+
+<script>
+    // Aplicar el ancho de la barra de progreso dinámicamente
+    document.addEventListener('DOMContentLoaded', function() {
+        const progressBar = document.querySelector('.progress-bar-fill');
+        const progress = progressBar.getAttribute('data-progress');
+        progressBar.style.width = progress + '%';
+    });
+</script>
+
+<div class="card">
+    <h3>Cronograma de Rediseño Curricular 2025</h3>
+    
+    <div class="table-responsive">
+        <table class="cronograma-table">
+            <thead>
+                <tr>
+                    <th class="col-numero">No.</th>
+                    <th class="col-fases">Fases/Actividades</th>
+                    <th class="col-fechas">Fechas</th>
+                    <th class="col-medios">Medios de verificación</th>
+                    <th class="col-estado">Estado</th>
+                    <th class="col-acciones">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for estado in estados %}
+                <tr class="row-estado estado-{{ estado.estado }}">
+                    <td class="cell-numero">
+                        {{ forloop.counter }}
+                    </td>
+                    <td class="cell-fases">
+                        <strong class="fase-codigo">{{ estado.fase.codigo }}</strong><br>
+                        <span class="fase-nombre">{{ estado.fase.nombre }}</span>
+                    </td>
+                    <td class="cell-fechas">
+                        {% if estado.fecha_inicio %}
+                            <div class="fecha-item">
+                                <strong>Inicio:</strong>
+                                {{ estado.fecha_inicio|date:"d/m/Y" }}
+                            </div>
+                        {% endif %}
+                        {% if estado.fecha_conclusion %}
+                            <div class="fecha-item">
+                                <strong>Conclusión:</strong>
+                                {{ estado.fecha_conclusion|date:"d/m/Y" }}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td class="cell-medios">
+                        <div class="medios-content">
+                            <div class="medios-esperados">
+                                <strong>Esperados:</strong>
+                                {{ estado.fase.medios_verificacion|default:"-" }}
+                            </div>
+                            {% if estado.medios_verificacion %}
+                            <div class="medios-cumplidos">
+                                <strong>Cumplidos:</strong>
+                                {{ estado.medios_verificacion }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="cell-estado">
+                        <span class="badge-estado badge-{{ estado.estado }}">
+                            {{ estado.get_estado_display }}
+                        </span>
+                        {% if estado.ultimo_editor %}
+                        <div class="editor-info">
+                            Editado por: {{ estado.ultimo_editor.username }}<br>
+                            {{ estado.fecha_actualizacion|date:"d/m/Y H:i" }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="cell-acciones">
+                        <div class="acciones-container">
+                            <a href="{% url 'editar_estado' estado.id %}" class="btn-editar">
+                                ✏️ Editar
+                            </a>
+                            
+                            <!-- Botón especial para CA para gestionar archivos -->
+                            {% if estado.fase.codigo == 'CA' %}
+                            <a href="{% url 'gestionar_archivos' estado.id %}" class="btn-archivos">
+                                📎 Archivos
+                            </a>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Indicador de archivos para CA -->
+                        {% if estado.fase.codigo == 'CA' and estado.tiene_archivos %}
+                        <div class="archivos-badge">
+                            <span class="badge-archivos">
+                                📎 {{ estado.archivos.count }} archivo(s)
+                            </span>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+/* Header Section */
+.header-section {
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.btn-volver {
+    display: inline-block;
+    text-decoration: none;
+    color: white;
+    background-color: #3498db;
+    padding: 0.6rem 1.2rem;
+    border-radius: 5px;
+    font-weight: 500;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+}
+
+.btn-volver:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
+
+.botones-reporte {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-reporte {
+    display: inline-block;
+    text-decoration: none;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 5px;
+    font-weight: 500;
+    font-size: 0.9em;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+}
+
+.btn-pdf {
+    background-color: #e74c3c;
+}
+
+.btn-pdf:hover {
+    background-color: #c0392b;
+    transform: translateY(-2px);
+}
+
+.btn-excel {
+    background-color: #27ae60;
+}
+
+.btn-excel:hover {
+    background-color: #229954;
+    transform: translateY(-2px);
+}
+
+.ultima-actualizacion {
+    font-size: 0.9em;
+    color: #7f8c8d;
+}
+
+/* Progress Bar */
+.progress-bar-container {
+    background-color: #ecf0f1;
+    border-radius: 10px;
+    height: 30px;
+    margin: 10px 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-bar-fill {
+    background-color: #27ae60;
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.5s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    width: 0; /* Se actualiza dinámicamente con JavaScript */
+}
+
+.progress-text {
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.progress-info {
+    text-align: center;
+    color: #7f8c8d;
+    margin-top: 0.5rem;
+}
+
+/* Table Styles */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.cronograma-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+}
+
+.cronograma-table thead tr {
+    background-color: #34495e;
+    color: white;
+}
+
+.cronograma-table th {
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+}
+
+.col-numero { 
+    width: 5%; 
+    text-align: center;
+}
+.col-fases { 
+    width: 30%; 
+}
+.col-fechas { 
+    width: 15%; 
+    text-align: center;
+}
+.col-medios { 
+    width: 25%; 
+}
+.col-estado { 
+    width: 15%; 
+    text-align: center;
+}
+.col-acciones { 
+    width: 10%; 
+    text-align: center;
+}
+
+.cronograma-table tbody tr {
+    border-bottom: 1px solid #ddd;
+    transition: background-color 0.2s ease;
+}
+
+.cronograma-table td {
+    padding: 0.75rem;
+}
+
+/* Cell Specific Styles */
+.cell-numero {
+    text-align: center;
+    font-weight: bold;
+    color: #34495e;
+}
+
+.fase-codigo {
+    color: #2c3e50;
+    font-size: 1em;
+}
+
+.fase-nombre {
+    color: #555;
+    line-height: 1.4;
+}
+
+.cell-fechas {
+    text-align: center;
+}
+
+.fecha-item {
+    margin: 0.3rem 0;
+    line-height: 1.5;
+}
+
+.fecha-item strong {
+    display: block;
+    color: #34495e;
+}
+
+.medios-content {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.medios-esperados {
+    margin-bottom: 0.5rem;
+}
+
+.medios-esperados strong {
+    color: #34495e;
+}
+
+.medios-cumplidos {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.medios-cumplidos strong {
+    color: #27ae60;
+}
+
+.cell-estado {
+    text-align: center;
+}
+
+.editor-info {
+    font-size: 0.8em;
+    color: #7f8c8d;
+    margin-top: 0.5rem;
+    line-height: 1.4;
+}
+
+.cell-acciones {
+    text-align: center;
+}
+
+/* Badge Styles */
+.badge-estado {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.badge-pendiente {
+    background-color: #ffebee;
+    color: #e74c3c;
+}
+
+.badge-en_proceso {
+    background-color: #fff3e0;
+    color: #f39c12;
+}
+
+.badge-completado {
+    background-color: #e8f5e8;
+    color: #27ae60;
+}
+
+/* Row Background Colors */
+.estado-pendiente { 
+    background-color: #ffebee; 
+}
+.estado-en_proceso { 
+    background-color: #fff3e0; 
+}
+.estado-completado { 
+    background-color: #e8f5e8; 
+}
+
+/* Button Styles */
+.acciones-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: center;
+}
+
+.btn-editar {
+    display: inline-block;
+    background-color: #3498db;
+    color: white;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    border-radius: 5px;
+    font-size: 0.85em;
+    font-weight: 500;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    width: 100%;
+    max-width: 120px;
+    text-align: center;
+}
+
+.btn-editar:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
+
+.btn-editar:active {
+    transform: translateY(0);
+}
+
+.btn-archivos {
+    display: inline-block;
+    background-color: #9b59b6;
+    color: white;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    border-radius: 5px;
+    font-size: 0.85em;
+    font-weight: 500;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    width: 100%;
+    max-width: 120px;
+    text-align: center;
+}
+
+.btn-archivos:hover {
+    background-color: #8e44ad;
+    transform: translateY(-2px);
+}
+
+.btn-archivos:active {
+    transform: translateY(0);
+}
+
+.archivos-badge {
+    margin-top: 5px;
+}
+
+.badge-archivos {
+    background-color: #27ae60;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    display: inline-block;
+    font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .header-section {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .botones-reporte {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn-reporte {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .cronograma-table {
+        font-size: 0.85em;
+    }
+    
+    .cronograma-table th,
+    .cronograma-table td {
+        padding: 0.5rem;
+    }
+}
+</style>
+{% endblock %}
