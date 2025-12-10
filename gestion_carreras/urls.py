@@ -1,4 +1,5 @@
 
+# gestion_carreras/urls.py
 
 from django.urls import path
 from . import views
@@ -12,8 +13,8 @@ urlpatterns = [
     path('editar-estado/<int:estado_id>/', views.editar_estado_cronograma, name='editar_estado'),
     path('actualizar-estado-rapido/<int:estado_id>/', views.actualizar_estado_rapido, name='actualizar_estado_rapido'),
     # Reportes
-    path('reporte/pdf/<int:carrera_id>/', views.reporte_pdf, name='reporte_pdf'),
-    path('reporte/excel/<int:carrera_id>/', views.reporte_excel, name='reporte_excel'),
+    path('reporte/pdf/<int:carrera_id>/', reporte_pdf_carrera, name='reporte_pdf'),
+    path('reporte/excel/<int:carrera_id>/', reporte_excel_carrera, name='reporte_excel'),
     # Archivos
     path('archivos/<int:estado_id>/', views.gestionar_archivos, name='gestionar_archivos'),
     path('archivos/eliminar/<int:archivo_id>/', views.eliminar_archivo, name='eliminar_archivo'),
