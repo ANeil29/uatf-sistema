@@ -1,12 +1,24 @@
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.http import JsonResponse, HttpResponse
+from django.utils import timezone
+from django.conf import settings
+import os
+from io import BytesIO
 
-from reportlab.lib.pagesizes import letter, A4
+# Imports para reportes PDF
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from io import BytesIO
+from reportlab.lib.enums import TA_CENTER
 
+# Imports de modelos y forms
+from .models import Carrera, Facultad, EstadoCronograma, FaseCronograma, Sede, ArchivoCronograma
+from .forms import EstadoCronogramaForm, ArchivoCronogramaForm
 @login_required
 def reporte_pdf(request, carrera_id):
     """Generar reporte PDF del cronograma"""
