@@ -1,197 +1,214 @@
 
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
-from django.utils import timezone
-from django.conf import settings
-import os
-from .models import Carrera, Facultad, EstadoCronograma, FaseCronograma, Sede, ArchivoCronograma
-from .forms import EstadoCronogramaForm, ArchivoCronogramaForm
-
-def login_view(request):
-    if request.method == 'POST':
-        username = request.POST['username']
-        password = request.POST['password']
-        user = authenticate(request, username=username, password=password)
-        
-        if user is not None:
-            login(request, user)
-            return redirect('lista_carreras')
-        else:
-            messages.error(request, 'Usuario o contraseña incorrectos')
-    
-    return render(request, 'login.html')
-
-def logout_view(request):
-    logout(request)
-    return redirect('login')
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from io import BytesIO
 
 @login_required
-def lista_carreras(request):
-    sedes = Sede.objects.all().order_by('nombre')
-    
-    carreras_por_sede = {}
-    for sede in sedes:
-        carreras_sede = Carrera.objects.filter(sede=sede).select_related('facultad').order_by('facultad__nombre', 'nombre')
-        
-        facultades_sede = {}
-        for carrera in carreras_sede:
-            if carrera.facultad.nombre not in facultades_sede:
-                facultades_sede[carrera.facultad.nombre] = []
-            facultades_sede[carrera.facultad.nombre].append(carrera)
-        
-        carreras_por_sede[sede] = facultades_sede
-    
-    context = {
-        'carreras_por_sede': carreras_por_sede,
-    }
-    return render(request, 'lista_carreras.html', context)
-
-@login_required
-def detalle_cronograma(request, carrera_id):
+def reporte_pdf(request, carrera_id):
+    """Generar reporte PDF del cronograma"""
     carrera = get_object_or_404(Carrera, id=carrera_id)
-    estados = EstadoCronograma.objects.filter(carrera=carrera).select_related('fase')
+    estados = EstadoCronograma.objects.filter(carrera=carrera).select_related('fase').order_by('fase__orden')
     
-    # Crear estados faltantes si es necesario
-    fases_existentes = [estado.fase for estado in estados]
-    fases_faltantes = FaseCronograma.objects.exclude(id__in=[f.id for f in fases_existentes])
+    # Crear el PDF en memoria
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
     
-    for fase in fases_faltantes:
-        EstadoCronograma.objects.create(carrera=carrera, fase=fase)
+    # Contenedor para los elementos del PDF
+    elements = []
     
-    estados = EstadoCronograma.objects.filter(carrera=carrera).select_related('fase')
+    # Estilos
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
     
-    # Calcular progreso general
-    total_fases = estados.count()
-    fases_completadas = estados.filter(estado='completado').count()
-    progreso_porcentaje = (fases_completadas / total_fases * 100) if total_fases > 0 else 0
+    # Título
+    elements.append(Paragraph("Universidad Autónoma Tomás Frías", title_style))
+    elements.append(Paragraph("Reporte de Rediseño Curricular", styles['Heading2']))
+    elements.append(Spacer(1, 12))
     
-    context = {
-        'carrera': carrera,
-        'estados': estados,
-        'progreso_porcentaje': round(progreso_porcentaje, 1),
-        'fases_completadas': fases_completadas,
-        'total_fases': total_fases,
-    }
-    return render(request, 'detalle_cronograma.html', context)
-
-@login_required
-def editar_estado_cronograma(request, estado_id):
-    estado = get_object_or_404(EstadoCronograma, id=estado_id)
+    # Información de la carrera
+    carrera_info = [
+        ['Carrera:', carrera.nombre],
+        ['Facultad:', carrera.facultad.nombre],
+        ['Sede:', carrera.sede.nombre],
+        ['Grado:', carrera.get_grado_academico_display()],
+        ['Fecha:', timezone.now().strftime('%d/%m/%Y %H:%M')]
+    ]
     
-    if request.method == 'POST':
-        form = EstadoCronogramaForm(request.POST, instance=estado)
-        if form.is_valid():
-            estado_editado = form.save(commit=False)
-            estado_editado.ultimo_editor = request.user
-            estado_editado.fecha_actualizacion = timezone.now()
-            estado_editado.save()
-            
-            messages.success(request, f'✅ Estado de {estado.fase.codigo} actualizado correctamente')
-            return redirect('detalle_cronograma', carrera_id=estado.carrera.id)
-    else:
-        form = EstadoCronogramaForm(instance=estado)
+    info_table = Table(carrera_info, colWidths=[2*inch, 4*inch])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
     
-    context = {
-        'estado': estado,
-        'form': form,
-        'carrera': estado.carrera,
-    }
-    return render(request, 'editar_estado.html', context)
-
-@login_required
-def actualizar_estado_rapido(request, estado_id):
-    """Vista para actualización rápida via AJAX"""
-    if request.method == 'POST' and request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        estado = get_object_or_404(EstadoCronograma, id=estado_id)
-        nuevo_estado = request.POST.get('estado')
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+    
+    # Tabla de cronograma
+    data = [['No.', 'Fase', 'Estado', 'Fecha Inicio', 'Fecha Conclusión']]
+    
+    for idx, estado in enumerate(estados, 1):
+        fecha_inicio = estado.fecha_inicio.strftime('%d/%m/%Y') if estado.fecha_inicio else '-'
+        fecha_conclusion = estado.fecha_conclusion.strftime('%d/%m/%Y') if estado.fecha_conclusion else '-'
         
-        if nuevo_estado in dict(EstadoCronograma.ESTADOS):
-            estado.estado = nuevo_estado
-            estado.ultimo_editor = request.user
-            estado.fecha_actualizacion = timezone.now()
-            
-            # Si se marca como completado, establecer fecha de conclusión si no existe
-            if nuevo_estado == 'completado' and not estado.fecha_conclusion:
-                estado.fecha_conclusion = timezone.now().date()
-            
-            estado.save()
-            
-            return JsonResponse({
-                'success': True,
-                'estado': estado.estado,
-                'estado_display': estado.get_estado_display(),
-                'fecha_actualizacion': estado.fecha_actualizacion.strftime('%d/%m/%Y %H:%M')
-            })
+        data.append([
+            str(idx),
+            f"{estado.fase.codigo}\n{estado.fase.nombre[:50]}",
+            estado.get_estado_display(),
+            fecha_inicio,
+            fecha_conclusion
+        ])
     
-    return JsonResponse({'success': False})
-
-@login_required
-def gestionar_archivos(request, estado_id):
-    """Vista para gestionar archivos de una fase específica"""
-    estado = get_object_or_404(EstadoCronograma, id=estado_id)
-    archivos = estado.archivos.all()
+    # Crear tabla
+    table = Table(data, colWidths=[0.5*inch, 3*inch, 1.2*inch, 1.2*inch, 1.2*inch])
     
-    if request.method == 'POST':
-        form = ArchivoCronogramaForm(request.POST, request.FILES)
-        if form.is_valid():
-            archivo = form.save(commit=False)
-            archivo.estado = estado
-            archivo.subido_por = request.user
-            archivo.save()
-            
-            messages.success(request, f'✅ Archivo "{archivo.nombre}" subido correctamente')
-            return redirect('gestionar_archivos', estado_id=estado_id)
-    else:
-        form = ArchivoCronogramaForm()
+    # Estilo de la tabla
+    table_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]
     
-    context = {
-        'estado': estado,
-        'archivos': archivos,
-        'form': form,
-        'carrera': estado.carrera,
-    }
-    return render(request, 'gestionar_archivos.html', context)
-
-@login_required
-def eliminar_archivo(request, archivo_id):
-    """Eliminar un archivo"""
-    archivo = get_object_or_404(ArchivoCronograma, id=archivo_id)
-    estado_id = archivo.estado.id
-    
-    # Eliminar archivo físico
-    if archivo.archivo:
-        if os.path.isfile(archivo.archivo.path):
-            os.remove(archivo.archivo.path)
-    
-    archivo.delete()
-    messages.success(request, '✅ Archivo eliminado correctamente')
-    return redirect('gestionar_archivos', estado_id=estado_id)
-
-@login_required
-def descargar_archivo(request, archivo_id):
-    """Descargar un archivo"""
-    archivo = get_object_or_404(ArchivoCronograma, id=archivo_id)
-    
-    if archivo.archivo:
-        # Determinar el nombre del archivo
-        if archivo.nombre:
-            filename = archivo.nombre
+    # Colorear filas según estado
+    for idx, estado in enumerate(estados, 1):
+        if estado.estado == 'completado':
+            table_style.append(('BACKGROUND', (0, idx), (-1, idx), colors.HexColor('#e8f5e8')))
+        elif estado.estado == 'en_proceso':
+            table_style.append(('BACKGROUND', (0, idx), (-1, idx), colors.HexColor('#fff3e0')))
         else:
-            filename = archivo.nombre_original
+            table_style.append(('BACKGROUND', (0, idx), (-1, idx), colors.HexColor('#ffebee')))
+    
+    table.setStyle(TableStyle(table_style))
+    elements.append(table)
+    
+    # Generar PDF
+    doc.build(elements)
+    
+    # Obtener el valor del buffer y crear la respuesta
+    pdf = buffer.getvalue()
+    buffer.close()
+    
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="Reporte_{carrera.nombre.replace(" ", "_")}.pdf"'
+    response.write(pdf)
+    
+    return response
+
+@login_required
+def reporte_excel(request, carrera_id):
+    """Generar reporte Excel del cronograma"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    
+    carrera = get_object_or_404(Carrera, id=carrera_id)
+    estados = EstadoCronograma.objects.filter(carrera=carrera).select_related('fase').order_by('fase__orden')
+    
+    # Crear workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cronograma"
+    
+    # Estilos
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    header_fill = PatternFill(start_color="34495e", end_color="34495e", fill_type="solid")
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Título
+    ws['A1'] = "Universidad Autónoma Tomás Frías"
+    ws['A1'].font = Font(bold=True, size=14)
+    ws.merge_cells('A1:F1')
+    
+    ws['A2'] = "Reporte de Rediseño Curricular"
+    ws['A2'].font = Font(bold=True, size=12)
+    ws.merge_cells('A2:F2')
+    
+    # Información de la carrera
+    ws['A4'] = "Carrera:"
+    ws['B4'] = carrera.nombre
+    ws['A5'] = "Facultad:"
+    ws['B5'] = carrera.facultad.nombre
+    ws['A6'] = "Sede:"
+    ws['B6'] = carrera.sede.nombre
+    ws['A7'] = "Fecha:"
+    ws['B7'] = timezone.now().strftime('%d/%m/%Y %H:%M')
+    
+    # Encabezados de tabla
+    headers = ['No.', 'Código', 'Fase/Actividad', 'Estado', 'Fecha Inicio', 'Fecha Conclusión']
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=9, column=col_num)
+        cell.value = header
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+    
+    # Datos
+    for idx, estado in enumerate(estados, 1):
+        row = idx + 9
         
-        # Asegurarse de que tenga extensión
-        if not os.path.splitext(filename)[1]:
-            ext = os.path.splitext(archivo.archivo.name)[1]
-            filename = filename + ext
+        ws.cell(row=row, column=1, value=idx)
+        ws.cell(row=row, column=2, value=estado.fase.codigo)
+        ws.cell(row=row, column=3, value=estado.fase.nombre)
+        ws.cell(row=row, column=4, value=estado.get_estado_display())
+        ws.cell(row=row, column=5, value=estado.fecha_inicio.strftime('%d/%m/%Y') if estado.fecha_inicio else '-')
+        ws.cell(row=row, column=6, value=estado.fecha_conclusion.strftime('%d/%m/%Y') if estado.fecha_conclusion else '-')
         
-        # Leer el archivo y crear la respuesta
-        with archivo.archivo.open('rb') as f:
-            response = HttpResponse(f.read(), content_type='application/octet-stream')
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            return response
-    else:
-        messages.error(request, '❌ El archivo no existe')
-        return redirect('gestionar_archivos', estado_id=archivo.estado.id)
+        # Aplicar bordes y colores
+        for col in range(1, 7):
+            cell = ws.cell(row=row, column=col)
+            cell.border = border
+            cell.alignment = Alignment(horizontal='left', vertical='center')
+            
+            # Color según estado
+            if estado.estado == 'completado':
+                cell.fill = PatternFill(start_color="e8f5e8", end_color="e8f5e8", fill_type="solid")
+            elif estado.estado == 'en_proceso':
+                cell.fill = PatternFill(start_color="fff3e0", end_color="fff3e0", fill_type="solid")
+            else:
+                cell.fill = PatternFill(start_color="ffebee", end_color="ffebee", fill_type="solid")
+    
+    # Ajustar anchos de columna
+    ws.column_dimensions['A'].width = 6
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 50
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 15
+    
+    # Guardar en memoria
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="Reporte_{carrera.nombre.replace(" ", "_")}.xlsx"'
+    
+    return response
