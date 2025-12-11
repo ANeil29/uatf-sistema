@@ -14,7 +14,20 @@ SECRET_KEY = config('SECRET_KEY', default='tu-clave-secreta-desarrollo')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
+# Configuración de ALLOWED_HOSTS
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+
+# En producción, agregar dominios de Railway
+if not DEBUG:
+    ALLOWED_HOSTS.extend([
+        'uatf-sistema-production.up.railway.app',
+        '.railway.app',
+        '.up.railway.app',
+    ])
+
+# Si hay una variable de entorno RAILWAY_PUBLIC_DOMAIN, agregarla
+if 'RAILWAY_PUBLIC_DOMAIN' in os.environ:
+    ALLOWED_HOSTS.append(os.environ['RAILWAY_PUBLIC_DOMAIN'])
 
 # Application definition
 INSTALLED_APPS = [
